@@ -211,6 +211,7 @@ namespace MacDock
                 ButtonOverlay ov;
                 if (!overlays.TryGetValue(h, out ov)) { Ensure(h); continue; }
                 if (!ov.IsShown && !N.IsIconic(h)) ov.Place(h == active);
+                else if (ov.IsShown) ov.KeepOnTop();   // si quedo detras de su ventana, regresarla encima
             }
         }
 
@@ -246,8 +247,26 @@ namespace MacDock
         [DllImport("gdi32.dll")] static extern uint GetPixel(IntPtr dc, int x, int y);
         [DllImport("user32.dll")] static extern bool GetCursorPos(out N.POINT p);
         [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] static extern IntPtr SetWindowLongPtr(IntPtr h, int idx, IntPtr v);
+        [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] static extern IntPtr GetWindowLongPtr(IntPtr h, int idx);
 
         readonly IntPtr target;
+
+        // La capa tiene que quedar justo encima de su ventana. Windows a veces le quita el "dueño" (o nunca lo acepta),
+        // y entonces, al cambiar de ventana, la app se pone encima de la capa y se ven los botones de Windows.
+        // Aqui se revisa y se corrige: dueño otra vez y, por si acaso, la capa se pone justo arriba de la app.
+        public void KeepOnTop()
+        {
+            if (!IsHandleCreated || IsDisposed) return;
+            try
+            {
+                if (GetWindowLongPtr(Handle, -8) != target) SetWindowLongPtr(Handle, -8, target);
+                IntPtr above = N.GetWindow(target, 3);   // la ventana que esta justo encima de la app
+                if (above == Handle) return;
+                bool topmost = above != IntPtr.Zero && (N.GetWindowLong(above, -20) & 0x8) != 0;
+                N.SetWindowPos(Handle, above == IntPtr.Zero || topmost ? IntPtr.Zero : above, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
+            }
+            catch { }
+        }
         Rectangle area; Color bgColor = Color.Black; bool isActive, inside, drawn, drawnActive; float s = 1f;
         Timer hoverTimer = new Timer { Interval = 60 };
 
@@ -303,6 +322,7 @@ namespace MacDock
                 if (drawn && a.Size == area.Size && activeWin == drawnActive && N.IsWindowVisible(Handle))
                 {
                     if (a.Location != area.Location) { area = a; N.SetWindowPos(Handle, IntPtr.Zero, a.Left, a.Top, 0, 0, 0x0001 | 0x0004 | 0x0010 | 0x0200); }
+                    KeepOnTop();
                     return;
                 }
                 area = a; drawn = true; drawnActive = activeWin;
@@ -312,6 +332,7 @@ namespace MacDock
                 if (px != 0xFFFFFFFF) bgColor = Color.FromArgb(255, (int)(px & 0xFF), (int)((px >> 8) & 0xFF), (int)((px >> 16) & 0xFF));
                 Render();
                 N.ShowWindow(Handle, 4);
+                KeepOnTop();
             }
             catch (Exception ex) { Program.Log(ex); }
         }
