@@ -50,7 +50,35 @@ namespace MacDock
             List<IntPtr> list; lock (pendingMove) { list = pendingMove.ToList(); pendingMove.Clear(); moveScheduled = false; }
             if (paused) return;
             ButtonOverlay ov;
-            foreach (var h in list) if (overlays.TryGetValue(h, out ov)) ov.Place(h == active);
+            foreach (var h in list) { CheckTitleDoubleClick(h); if (overlays.TryGetValue(h, out ov)) ov.Place(h == active); }
+        }
+
+        // ---------- doble clic en la barra para minimizar (opcional, como en Mac) ----------
+        // Windows no avisa del doble clic en la barra de otra app (y no usamos ganchos de teclado/mouse),
+        // asi que se reconoce por lo que provoca: la ventana se agranda con el mouse sobre su barra,
+        // sin haberla arrastrado ni usado el teclado ni el boton verde. En ese caso se regresa y se minimiza.
+        [DllImport("user32.dll")] static extern short GetAsyncKeyState(int vk);
+        [DllImport("user32.dll")] static extern bool GetCursorPos(out N.POINT p);
+        readonly Dictionary<IntPtr, bool> zoomed = new Dictionary<IntPtr, bool>();
+        readonly Dictionary<IntPtr, int> moveEnd = new Dictionary<IntPtr, int>();
+
+        void CheckTitleDoubleClick(IntPtr h)
+        {
+            bool z = N.IsZoomed(h), was;
+            zoomed.TryGetValue(h, out was); zoomed[h] = z;
+            if (!z || was || !MacButtonRules.DoubleClickMinimize || !overlays.ContainsKey(h)) return;
+            int now = Environment.TickCount, me;
+            if (WindowEffects.LastZoomHwnd == h && now - WindowEffects.LastZoomTick < 1500) return;   // lo agrando MacDock
+            if (moveEnd.TryGetValue(h, out me) && now - me < 800) return;                            // la arrastraron hasta arriba
+            if ((GetAsyncKeyState(0x5B) & 0x8000) != 0 || (GetAsyncKeyState(0x5C) & 0x8000) != 0) return;   // Windows + flecha
+            N.POINT p; GetCursorPos(out p);
+            N.RECT wr; N.GetWindowRect(h, out wr);
+            float dpi = 1f; try { dpi = N.GetDpiForWindow(h) / 96f; } catch { }
+            if (p.x < wr.left || p.x > wr.right || p.y < wr.top || p.y > wr.top + 56 * dpi) return;   // el mouse no esta en la barra
+            N.PostMessage(h, 0x0112, new IntPtr(0xF120), IntPtr.Zero);   // regresarla a como estaba
+            var t = new Timer { Interval = 120 };
+            t.Tick += (o, e) => { t.Stop(); t.Dispose(); if (IsWindow(h)) WindowEffects.Minimize(h, MacButtonRules.MinimizeAnim); };
+            t.Start();
         }
         readonly Dictionary<IntPtr, ButtonOverlay> overlays = new Dictionary<IntPtr, ButtonOverlay>();
         IntPtr active = IntPtr.Zero;
@@ -164,7 +192,8 @@ namespace MacDock
                         if (overlays.TryGetValue(hwnd, out ov)) ov.Place(true);
                         break;
                     case 0x000A: if (overlays.TryGetValue(hwnd, out ov)) ov.Hide2(); break;
-                    case 0x000B: case 0x0017: if (overlays.TryGetValue(hwnd, out ov)) ov.Place(hwnd == active); break;
+                    case 0x000B: moveEnd[hwnd] = Environment.TickCount; if (overlays.TryGetValue(hwnd, out ov)) ov.Place(hwnd == active); break;
+                    case 0x0017: if (overlays.TryGetValue(hwnd, out ov)) ov.Place(hwnd == active); break;
                     case 0x8002: case 0x8000: Ensure(hwnd); break;
                     case 0x8001: case 0x8003: Remove(hwnd); break;
                     case 0x8017: if (overlays.TryGetValue(hwnd, out ov)) ov.Hide2(); break;                 // se oculto (cloak)
@@ -183,6 +212,7 @@ namespace MacDock
                 var ov = new ButtonOverlay(h);
                 if (MacButtonRules.MacBorder) Border(h, true);
                 overlays[h] = ov; lock (tracked) tracked.Add(h);
+                zoomed[h] = N.IsZoomed(h);
                 ov.Show();
                 ov.Place(h == active);
             }
@@ -193,7 +223,7 @@ namespace MacDock
         {
             ButtonOverlay ov;
             if (!overlays.TryGetValue(h, out ov)) return;
-            overlays.Remove(h); lock (tracked) tracked.Remove(h);
+            overlays.Remove(h); lock (tracked) tracked.Remove(h); zoomed.Remove(h); moveEnd.Remove(h);
             if (IsWindow(h)) Border(h, false); else bordered.Remove(h);
             try { if (!ov.IsDisposed) { ov.Close(); ov.Dispose(); } } catch { }
         }
@@ -269,6 +299,7 @@ namespace MacDock
         }
         Rectangle area; Color bgColor = Color.Black; bool isActive, inside, drawn, drawnActive; float s = 1f;
         Timer hoverTimer = new Timer { Interval = 60 };
+        Timer greenTimer = new Timer { Interval = 550 };   // mouse quieto sobre el verde: sale el menu para acomodar
 
         public ButtonOverlay(IntPtr target)
         {
@@ -278,7 +309,16 @@ namespace MacDock
             hoverTimer.Tick += (o, e) =>
             {
                 N.POINT p; GetCursorPos(out p);
-                if (!area.Contains(p.x, p.y)) { inside = false; hoverTimer.Stop(); Render(); }
+                if (!area.Contains(p.x, p.y)) { inside = false; hoverTimer.Stop(); greenTimer.Stop(); Render(); }
+            };
+            greenTimer.Tick += (o, e) =>
+            {
+                greenTimer.Stop();
+                N.POINT p; GetCursorPos(out p);
+                var o2 = Origin();
+                if (TrafficLights.Hit(new PointF(p.x - area.Left, p.y - area.Top), o2.X, o2.Y, s) != 2) return;
+                float gx = area.Left + o2.X + TrafficLights.Step(s) * 2, gy = area.Top + o2.Y + TrafficLights.D(s) + 6 * s;
+                WindowEffects.ShowArrangeMenu(target, Point.Round(new PointF(gx, gy)), bgColor.GetBrightness() > 0.55f);
             };
         }
 
@@ -361,7 +401,15 @@ namespace MacDock
             }
         }
 
-        protected override void OnMouseMove(MouseEventArgs e) { base.OnMouseMove(e); if (!inside) { inside = true; Render(); hoverTimer.Start(); } }
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            base.OnMouseMove(e);
+            if (!inside) { inside = true; Render(); hoverTimer.Start(); }
+            var o = Origin();
+            bool overGreen = TrafficLights.Hit(e.Location, o.X, o.Y, s) == 2;
+            if (overGreen && MacButtonRules.GreenMenu) { if (!greenTimer.Enabled) greenTimer.Start(); }
+            else greenTimer.Stop();
+        }
 
         protected override void OnMouseUp(MouseEventArgs e)
         {
@@ -371,17 +419,18 @@ namespace MacDock
             int i = TrafficLights.Hit(e.Location, o.X, o.Y, s);
             if (i < 0) return;
             IntPtr h = target;
+            greenTimer.Stop();
             if (i == 0) N.PostMessage(h, 0x0112, new IntPtr(0xF060), IntPtr.Zero);
-            else if (i == 1) N.PostMessage(h, 0x0112, new IntPtr(0xF020), IntPtr.Zero);
+            else if (i == 1) WindowEffects.Minimize(h, MacButtonRules.MinimizeAnim);
             else
             {
                 N.RECT fr; if (DwmGetWindowAttribute(h, 9, out fr, 16) != 0) N.GetWindowRect(h, out fr);
                 var wa = Screen.FromHandle(h).WorkingArea;
                 bool max = N.IsZoomed(h) || (fr.left <= wa.Left + 2 && fr.top <= wa.Top + 2 && fr.right >= wa.Right - 2 && fr.bottom >= wa.Bottom - 2);
-                N.PostMessage(h, 0x0112, new IntPtr(max ? 0xF120 : 0xF030), IntPtr.Zero);
+                if (max) N.PostMessage(h, 0x0112, new IntPtr(0xF120), IntPtr.Zero); else WindowEffects.Maximize(h);
             }
         }
 
-        protected override void OnFormClosing(FormClosingEventArgs e) { hoverTimer.Stop(); base.OnFormClosing(e); }
+        protected override void OnFormClosing(FormClosingEventArgs e) { hoverTimer.Stop(); greenTimer.Stop(); greenTimer.Dispose(); base.OnFormClosing(e); }
     }
 }

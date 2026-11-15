@@ -19,6 +19,9 @@ namespace MacDock
 
         public static bool OnlyChosen;        // false = todas menos las apagadas
         public static bool MacBorder = true;  // esquinas redondeadas y borde gris como en Mac
+        public static bool GreenMenu = true;  // mouse sobre el verde: menu para acomodar la ventana
+        public static bool MinimizeAnim = true;          // al minimizar, la ventana cae hacia el dock
+        public static bool DoubleClickMinimize = false;  // doble clic en la barra: minimizar en vez de agrandar
         public static readonly Dictionary<string, App> Apps = new Dictionary<string, App>(StringComparer.OrdinalIgnoreCase);
         public static event Action Changed;
         static bool loaded;
@@ -39,6 +42,9 @@ namespace MacDock
                     string k = line.Substring(0, eq).Trim(), v = line.Substring(eq + 1);
                     if (k == "modo") OnlyChosen = v.Trim() == "elegidas";
                     else if (k == "borde") MacBorder = v.Trim() == "1";
+                    else if (k == "menuverde") GreenMenu = v.Trim() == "1";
+                    else if (k == "animacion") MinimizeAnim = v.Trim() == "1";
+                    else if (k == "dobleclic") DoubleClickMinimize = v.Trim() == "1";
                     else if (k == "app")
                     {
                         var p = v.Split('|');
@@ -54,7 +60,8 @@ namespace MacDock
             try
             {
                 Directory.CreateDirectory(Program.DataDir);
-                var lines = new List<string> { "modo=" + (OnlyChosen ? "elegidas" : "todas"), "borde=" + (MacBorder ? 1 : 0) };
+                var lines = new List<string> { "modo=" + (OnlyChosen ? "elegidas" : "todas"), "borde=" + (MacBorder ? 1 : 0),
+                    "menuverde=" + (GreenMenu ? 1 : 0), "animacion=" + (MinimizeAnim ? 1 : 0), "dobleclic=" + (DoubleClickMinimize ? 1 : 0) };
                 foreach (var a in Apps.Values) lines.Add("app=" + a.Key + "|" + (a.On ? 1 : 0) + "|" + a.Path.Replace("|", "") + "|" + a.Name.Replace("|", ""));
                 File.WriteAllLines(FilePath, lines.ToArray());
             }
@@ -138,7 +145,7 @@ namespace MacDock
             catch (Exception ex) { Program.Log(ex); }
         }
 
-        MacButtonsWindow(Func<bool> enabled, Action<bool> setOn) : base("Botones de Mac", 560, 620)
+        MacButtonsWindow(Func<bool> enabled, Action<bool> setOn) : base("Botones de Mac", 560, 760)
         {
             isEnabled = enabled; setEnabled = setOn;
             Collect();
@@ -199,7 +206,7 @@ namespace MacDock
             bool on = isEnabled();
 
             // ajustes generales
-            var top = new RectangleF(r.X, r.Y, r.Width, 190 * s);
+            var top = new RectangleF(r.X, r.Y, r.Width, 310 * s);
             Card(g, top);
             float y = top.Y + 6 * s;
             var row1 = new RectangleF(top.X + ip, y, top.Width - ip * 2, rowH);
@@ -211,7 +218,24 @@ namespace MacDock
             using (var f = F(13f)) Txt(g, "Bordes redondeados estilo Mac", f, on ? Fg : Sub, row2);
             Switch(g, new RectangleF(row2.Right - 40 * s, row2.Y + (rowH - 22 * s) / 2, 40 * s, 22 * s), MacButtonRules.MacBorder,
                 () => { MacButtonRules.MacBorder = !MacButtonRules.MacBorder; MacButtonRules.Save(); });
-            y += rowH + 8 * s;
+            y += rowH;
+            // extras de Mac
+            Action<string, string, bool, Action> opt = (title, sub, val, toggle) =>
+            {
+                using (var pen = new Pen(CardBorder)) g.DrawLine(pen, top.X + ip, y, top.Right - ip, y);
+                var rr = new RectangleF(top.X + ip, y, top.Width - ip * 2, rowH);
+                using (var f = F(13f)) Txt(g, title, f, on ? Fg : Sub, new RectangleF(rr.X, rr.Y + 3 * s, rr.Width - 56 * s, 20 * s));
+                using (var f = F(11f)) Txt(g, sub, f, Sub, new RectangleF(rr.X, rr.Y + 21 * s, rr.Width - 56 * s, 16 * s));
+                Switch(g, new RectangleF(rr.Right - 40 * s, rr.Y + (rowH - 22 * s) / 2, 40 * s, 22 * s), val, toggle);
+                y += rowH;
+            };
+            opt("Menú del botón verde", "Deja el mouse encima: llenar, centrar, mitad izquierda o derecha", MacButtonRules.GreenMenu,
+                () => { MacButtonRules.GreenMenu = !MacButtonRules.GreenMenu; MacButtonRules.Save(); });
+            opt("Animación al minimizar", "La ventana cae hacia el dock", MacButtonRules.MinimizeAnim,
+                () => { MacButtonRules.MinimizeAnim = !MacButtonRules.MinimizeAnim; MacButtonRules.Save(); });
+            opt("Doble clic en la barra para minimizar", "En vez de agrandar la ventana (puede parpadear un instante)", MacButtonRules.DoubleClickMinimize,
+                () => { MacButtonRules.DoubleClickMinimize = !MacButtonRules.DoubleClickMinimize; MacButtonRules.Save(); });
+            y += 8 * s;
             using (var f = F(12f)) Txt(g, "¿En qué apps?", f, Sub, new RectangleF(top.X + ip, y, top.Width - ip * 2, 18 * s));
             y += 22 * s;
             Segments(g, new RectangleF(top.X + ip, y, top.Width - ip * 2, 30 * s), new[] { "En todas, menos las que apague", "Solo en las que yo elija" },
@@ -258,7 +282,7 @@ namespace MacDock
             else if (mb.Paused) { status = "En pausa: Windows cree que hay un juego o video a pantalla completa."; sc = Orange; }
             else status = "Ahora mismo: botones en " + mb.Count + (mb.Count == 1 ? " ventana" : " ventanas") + (MacButtons.LastError != "" ? "  ·  error: " + MacButtons.LastError : "");
             using (var f = F(11.5f))
-                Txt(g, status + "   (no salen en apps abiertas como administrador)", f, sc, new RectangleF(r.X + 4 * s, r.Bottom - 28 * s, r.Width - 8 * s, 28 * s), StringAlignment.Center);
+                Txt(g, sc == Orange ? status : status + "  ·  no salen en apps de administrador", f, sc, new RectangleF(r.X + 4 * s, r.Bottom - 28 * s, r.Width - 8 * s, 28 * s), StringAlignment.Center);
         }
     }
 }

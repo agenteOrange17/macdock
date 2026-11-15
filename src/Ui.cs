@@ -88,7 +88,7 @@ namespace MacDock
             var old = g.SmoothingMode; g.SmoothingMode = SmoothingMode.AntiAlias;
             Color[] fill = { Color.FromArgb(255, 95, 87), Color.FromArgb(254, 188, 46), Color.FromArgb(40, 200, 64) };
             Color[] edge = { Color.FromArgb(224, 68, 62), Color.FromArgb(222, 161, 35), Color.FromArgb(26, 171, 41) };
-            Color[] sym = { Color.FromArgb(120, 10, 6), Color.FromArgb(150, 87, 0), Color.FromArgb(0, 100, 0) };
+            Color[] sym = { Color.FromArgb(215, 90, 0, 0), Color.FromArgb(215, 140, 70, 0), Color.FromArgb(215, 0, 92, 0) };   // como los simbolos de Mac: oscuros y un poco transparentes
             Color off = light ? Color.FromArgb(206, 206, 210) : Color.FromArgb(78, 78, 84);
             float d = D(s);
             for (int i = 0; i < 3; i++)
@@ -98,19 +98,21 @@ namespace MacDock
                 using (var b = new SolidBrush(on ? fill[i] : off)) g.FillEllipse(b, r);
                 using (var p = new Pen(on ? edge[i] : Color.FromArgb(40, 0, 0, 0), Math.Max(0.8f, 0.6f * s))) g.DrawEllipse(p, r);
                 if (!glyphs) continue;
-                float cx = r.X + d / 2, cy = r.Y + d / 2, k = d * 0.24f;
-                using (var p = new Pen(sym[i], Math.Max(1.1f, 1.25f * s)) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+                float cx = r.X + d / 2, cy = r.Y + d / 2, k = d * 0.21f;
+                var pom = g.PixelOffsetMode; g.PixelOffsetMode = PixelOffsetMode.HighQuality;   // trazos finos y nitidos
+                using (var p = new Pen(sym[i], Math.Max(1f, 1.05f * s)) { StartCap = LineCap.Round, EndCap = LineCap.Round })
                 using (var b = new SolidBrush(sym[i]))
                 {
                     if (i == 0) { g.DrawLine(p, cx - k, cy - k, cx + k, cy + k); g.DrawLine(p, cx - k, cy + k, cx + k, cy - k); }
                     else if (i == 1) g.DrawLine(p, cx - k * 1.25f, cy, cx + k * 1.25f, cy);
                     else
                     {   // dos triangulos en diagonal (pantalla completa de Mac)
-                        float q = k * 1.15f;
+                        float q = k * 1.12f;
                         g.FillPolygon(b, new[] { new PointF(cx - q, cy - q), new PointF(cx + q * 0.35f, cy - q), new PointF(cx - q, cy + q * 0.35f) });
                         g.FillPolygon(b, new[] { new PointF(cx + q, cy + q), new PointF(cx - q * 0.35f, cy + q), new PointF(cx + q, cy - q * 0.35f) });
                     }
                 }
+                g.PixelOffsetMode = pom;
             }
             g.SmoothingMode = old;
         }

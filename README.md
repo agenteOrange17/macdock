@@ -89,6 +89,7 @@ Incluye además un **menú de ajustes** (un script de PowerShell) que cambia la 
 ### 🔴🟡🟢 Botones de Mac por app
 - Menú del dock → Opciones → **Elegir apps con botones de Mac…**: prende o apaga los botones (y el borde redondeado estilo Mac) en cada app, como Chrome, Brave, VS Code o Steam.
 - Dos formas: **en todas menos las que apagues**, o **solo en las que elijas**. Los cambios se ven al instante.
+- Extras como en Mac (cada uno se puede apagar): **menú del botón verde** al dejar el mouse encima (llenar, centrar, mitad izquierda o derecha), **animación al minimizar** (la ventana cae hacia el dock) y **doble clic en la barra para minimizar**.
 
 ### ⏰ Reloj (como el de macOS Ventura)
 - Clic en el widget del reloj: **Reloj mundial** (ciudades con su hora y si allá ya es mañana), **Alarmas** (una vez, diario o lunes a viernes), **Cronómetro** con vueltas y **Temporizador**.
