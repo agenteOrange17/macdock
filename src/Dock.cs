@@ -1925,6 +1925,24 @@ namespace MacDock
             Add(m, "Monitor de Actividad (memoria por app)", () => ActivityMonitor.Open(light, s));
             m.Items.Add(WallpaperMenu());
             if (DockerRunning()) Add(m, "Apagar Docker y WSL (libera RAM y bateria)", () => StopDocker());
+            {
+                // abrir solo al prender la compu (si se apaga, MacDock no arranca hasta que lo abras tu)
+                const string runKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
+                bool auto = false;
+                try { using (var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(runKey)) auto = k != null && k.GetValue("MacDock") != null; } catch { }
+                var mi = new ToolStripMenuItem("Abrir MacDock al iniciar Windows") { Checked = auto };
+                mi.Click += (o, e) =>
+                {
+                    try
+                    {
+                        using (var k = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(runKey))
+                            if (auto) k.DeleteValue("MacDock", false); else k.SetValue("MacDock", "\"" + Application.ExecutablePath + "\"");
+                    }
+                    catch (Exception ex) { Program.Log(ex); }
+                };
+                opts.DropDownItems.Add(new ToolStripSeparator());
+                opts.DropDownItems.Add(mi);
+            }
             m.Items.Add(opts);
             Add(m, "Cerrar dock y volver a la barra de Windows", () => Close());
 
