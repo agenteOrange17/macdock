@@ -14,9 +14,9 @@ namespace MacDock
     //   "universo": estrellas, nebulosa, planeta con anillos y luna.
     //   "neon":     ciudad cyberpunk con ventanas encendidas, letreros de neon, sol retro y lluvia.
     // Cada tema tiene 4 versiones segun la hora: amanecer, dia, atardecer y noche (para el fondo dinamico).
-    static class Wallpapers
+    static partial class Wallpapers
     {
-        public static readonly string[] Themes = { "aurora", "universo", "neon" };
+        public static readonly string[] Themes = { "aurora", "universo", "neon", "azotea", "montana" };
         public static readonly string[] Periods = { "amanecer", "dia", "atardecer", "noche" };
 
         public static string NameOf(string theme)
@@ -25,6 +25,8 @@ namespace MacDock
             {
                 case "universo": return "Universo pixel";
                 case "neon": return "Ciudad neón";
+                case "azotea": return "Azotea con gato";
+                case "montana": return "Ciudad y montaña";
                 default: return "Aurora (el de MacDock)";
             }
         }
@@ -106,12 +108,16 @@ namespace MacDock
         public static Bitmap Render(string theme, string period, int W, int H)
         {
             if (theme == "aurora") return Aurora(period, W, H);
-            int px = Math.Max(3, (int)Math.Round(H / 216.0));
+            bool fine = theme == "azotea" || theme == "montana";   // las escenas nuevas llevan pixeles mas finos (mas detalle)
+            int px = Math.Max(fine ? 2 : 3, (int)Math.Round(H / (fine ? 280.0 : 216.0)));
             int w = (W + px - 1) / px, h = (H + px - 1) / px;
             var art = new Canvas(w, h);
             var glow = new Canvas(w, h);
-            var rnd = new Random(theme == "neon" ? 2077 : 4242);   // siempre el mismo dibujo para el mismo tema
-            if (theme == "neon") City(art, glow, period, rnd); else Universe(art, glow, period, rnd);
+            var rnd = new Random(theme == "neon" ? 2077 : theme == "azotea" ? 1957 : theme == "montana" ? 3776 : 4242);   // siempre el mismo dibujo para el mismo tema
+            if (theme == "neon") City(art, glow, period, rnd);
+            else if (theme == "azotea") Rooftop(art, glow, period, rnd);
+            else if (theme == "montana") Mountain(art, glow, period, rnd);
+            else Universe(art, glow, period, rnd);
 
             var outBmp = new Bitmap(W, H, PixelFormat.Format32bppArgb);
             using (var lowArt = art.ToBitmap())
@@ -191,7 +197,7 @@ namespace MacDock
             switch (period)
             {
                 case "amanecer": top = Rgb(20, 14, 52); bottom = Rgb(92, 40, 110); neb = new[] { Rgb(120, 60, 160), Rgb(220, 110, 170), Rgb(255, 180, 170) }; planetA = Rgb(240, 150, 110); planetB = Rgb(150, 70, 120); ring = Rgb(255, 210, 190); break;
-                case "dia": top = Rgb(10, 30, 70); bottom = Rgb(20, 90, 130); neb = new[] { Rgb(30, 130, 170), Rgb(80, 200, 210), Rgb(190, 250, 240) }; planetA = Rgb(110, 190, 230); planetB = Rgb(40, 90, 160); ring = Rgb(210, 240, 255); break;
+                case "dia": top = Rgb(22, 58, 120); bottom = Rgb(60, 140, 190); neb = new[] { Rgb(30, 130, 170), Rgb(80, 200, 210), Rgb(190, 250, 240) }; planetA = Rgb(110, 190, 230); planetB = Rgb(40, 90, 160); ring = Rgb(210, 240, 255); break;
                 case "atardecer": top = Rgb(30, 10, 36); bottom = Rgb(110, 30, 40); neb = new[] { Rgb(160, 40, 70), Rgb(240, 100, 60), Rgb(255, 190, 110) }; planetA = Rgb(250, 170, 80); planetB = Rgb(170, 60, 50); ring = Rgb(255, 220, 160); break;
                 default: top = Rgb(6, 6, 20); bottom = Rgb(24, 14, 56); neb = new[] { Rgb(60, 30, 120), Rgb(150, 60, 190), Rgb(90, 170, 255) }; planetA = Rgb(200, 130, 230); planetB = Rgb(70, 40, 140); ring = Rgb(220, 200, 255); break;
             }

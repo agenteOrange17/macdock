@@ -479,7 +479,7 @@ namespace MacDock
                 var mi = new ToolStripMenuItem(Wallpapers.NameOf(theme)) { Checked = cfg.WallTheme == theme };
                 mi.Click += (o, e) =>
                 {
-                    cfg.WallTheme = theme; cfg.Save();
+                    cfg.WallTheme = theme; cfg.DynWall = true; cfg.Save(); lookAt = DateTime.MinValue;   // al elegir un fondo, que cambie solo con la hora
                     Wallpapers.Apply(theme, ok => { if (!ok) try { BeginInvoke(new Action(() => MessageBox.Show("No se pudo crear el fondo. Revisa error.log en la carpeta de MacDock.", "MacDock"))); } catch { } });
                 };
                 wm.DropDownItems.Add(mi);
