@@ -86,6 +86,11 @@ namespace MacDock
     // (una foto chica que se estira; la transparencia la hace Windows).
     class MinimizeFx : Form
     {
+        [DllImport("gdi32.dll")] static extern IntPtr CreateCompatibleBitmap(IntPtr dc, int w, int h);
+        [DllImport("gdi32.dll")] static extern bool StretchBlt(IntPtr dst, int x, int y, int w, int h, IntPtr src, int sx, int sy, int sw, int sh, int rop);
+        [DllImport("gdi32.dll")] static extern int SetStretchBltMode(IntPtr dc, int mode);
+        [DllImport("gdi32.dll")] static extern bool SetBrushOrgEx(IntPtr dc, int x, int y, IntPtr old);
+
         readonly IntPtr target; readonly Rectangle from; Rectangle to;
         Bitmap shot; readonly Timer timer = new Timer { Interval = 10 };
         readonly System.Diagnostics.Stopwatch clock = new System.Diagnostics.Stopwatch();
@@ -103,6 +108,7 @@ namespace MacDock
             int tw = Math.Max(40, from.Width / 12), th = Math.Max(30, from.Height / 12);
             to = new Rectangle(scr.Left + scr.Width / 2 - tw / 2, scr.Bottom - th - 10, tw, th);   // hacia el dock (abajo al centro)
             timer.Tick += (o, e) => Step();
+            CreateHandle();   // la ventana de la animacion ya existe (oculta) para que aparezca al instante
         }
 
         protected override CreateParams CreateParams { get { var cp = base.CreateParams; cp.ExStyle |= 0x80 | 0x8 | 0x20 | 0x8000000; return cp; } }   // sin taskbar, encima, el mouse pasa, no roba el foco
@@ -111,19 +117,24 @@ namespace MacDock
         public void Start()
         {
             if (from.Width < 50 || from.Height < 50) { N.PostMessage(target, 0x0112, new IntPtr(0xF020), IntPtr.Zero); Dispose(); return; }
-            // foto de la ventana tal como se ve, reducida (ligera para estirarla en cada cuadro)
-            float k = Math.Min(1f, 640f / Math.Max(from.Width, from.Height));
-            using (var full = new Bitmap(from.Width, from.Height))
+            // 1) foto chica de la ventana, en un solo paso de Windows (rapidisimo)
+            float k = Math.Min(1f, 560f / Math.Max(from.Width, from.Height));
+            int sw = Math.Max(1, (int)(from.Width * k)), sh = Math.Max(1, (int)(from.Height * k));
+            IntPtr scr = N.GetDC(IntPtr.Zero), mem = N.CreateCompatibleDC(scr), hb = CreateCompatibleBitmap(scr, sw, sh), old = N.SelectObject(mem, hb);
+            try
             {
-                using (var g = Graphics.FromImage(full)) g.CopyFromScreen(from.Location, Point.Empty, from.Size);
-                shot = new Bitmap(Math.Max(1, (int)(from.Width * k)), Math.Max(1, (int)(from.Height * k)));
-                using (var g = Graphics.FromImage(shot)) { g.InterpolationMode = InterpolationMode.HighQualityBilinear; g.DrawImage(full, 0, 0, shot.Width, shot.Height); }
+                SetStretchBltMode(mem, 4); SetBrushOrgEx(mem, 0, 0, IntPtr.Zero);   // reduccion suave
+                StretchBlt(mem, 0, 0, sw, sh, scr, from.Left, from.Top, from.Width, from.Height, 0x00CC0020);
+                N.SelectObject(mem, old);
+                shot = Image.FromHbitmap(hb);
             }
-            Show();
-            Refresh();   // la foto ya esta encima antes de que la ventana real se vaya
+            finally { N.DeleteObject(hb); N.DeleteDC(mem); N.ReleaseDC(IntPtr.Zero, scr); }
+            // 2) la ventana real se va ya (se le pide a Windows directo, sin esperar a la app)
             WindowEffects.WindowsAnimation(target, false);
-            // la ventana real se minimiza ya: se le pide a Windows directo (algunas apps tardan en atender el aviso normal)
             if (!WindowEffects.ShowWindowAsync(target, 6)) N.PostMessage(target, 0x0112, new IntPtr(0xF020), IntPtr.Zero);
+            // 3) la foto aparece en su lugar y empieza a caer
+            Show();
+            Refresh();
             clock.Start();
             timer.Start();
         }
