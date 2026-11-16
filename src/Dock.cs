@@ -484,6 +484,10 @@ namespace MacDock
                 };
                 wm.DropDownItems.Add(mi);
             }
+            // tus propias imagenes (una para cada momento del dia)
+            var mine = new ToolStripMenuItem("Mis imágenes…") { Checked = cfg.WallTheme == "mios" };
+            mine.Click += (o, e) => MyWallpapersWindow.Open(() => { cfg.WallTheme = "mios"; cfg.DynWall = true; cfg.Save(); lookAt = DateTime.MinValue; });
+            wm.DropDownItems.Add(mine);
             wm.DropDownItems.Add(new ToolStripSeparator());
             var dyn = new ToolStripMenuItem("Cambiar según la hora del día") { Checked = cfg.DynWall };
             dyn.Click += (o, e) => { cfg.DynWall = !cfg.DynWall; cfg.Save(); lookAt = DateTime.MinValue; };
