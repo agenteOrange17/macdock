@@ -101,7 +101,7 @@ namespace MacDock
             target = h;
             from = Rectangle.FromLTRB(fr.left, fr.top, fr.right, fr.bottom);
             FormBorderStyle = FormBorderStyle.None; ShowInTaskbar = false; StartPosition = FormStartPosition.Manual;
-            DoubleBuffered = true; BackColor = Color.Black;
+            DoubleBuffered = true; BackColor = Color.FromArgb(40, 40, 46);
             Bounds = from;
             Opacity = 0.99;   // la hace "transparente por capas" desde el inicio (cambiar la opacidad despues es instantaneo)
             var scr = Screen.FromRectangle(from).Bounds;
@@ -129,12 +129,12 @@ namespace MacDock
                 shot = Image.FromHbitmap(hb);
             }
             finally { N.DeleteObject(hb); N.DeleteDC(mem); N.ReleaseDC(IntPtr.Zero, scr); }
-            // 2) la ventana real se va ya (se le pide a Windows directo, sin esperar a la app)
-            WindowEffects.WindowsAnimation(target, false);
-            if (!WindowEffects.ShowWindowAsync(target, 6)) N.PostMessage(target, 0x0112, new IntPtr(0xF020), IntPtr.Zero);
-            // 3) la foto aparece en su lugar y empieza a caer
+            // 2) la foto aparece justo encima de la ventana (identica, no se nota)...
             Show();
             Refresh();
+            // 3) ...y la ventana real se va por debajo; asi nunca se ve un hueco ni parpadeo
+            WindowEffects.WindowsAnimation(target, false);
+            if (!WindowEffects.ShowWindowAsync(target, 6)) N.PostMessage(target, 0x0112, new IntPtr(0xF020), IntPtr.Zero);
             clock.Start();
             timer.Start();
         }
