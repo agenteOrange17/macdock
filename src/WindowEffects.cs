@@ -122,7 +122,8 @@ namespace MacDock
             Show();
             Refresh();   // la foto ya esta encima antes de que la ventana real se vaya
             WindowEffects.WindowsAnimation(target, false);
-            N.PostMessage(target, 0x0112, new IntPtr(0xF020), IntPtr.Zero);   // la ventana real se minimiza ya
+            // la ventana real se minimiza ya: se le pide a Windows directo (algunas apps tardan en atender el aviso normal)
+            if (!WindowEffects.ShowWindowAsync(target, 6)) N.PostMessage(target, 0x0112, new IntPtr(0xF020), IntPtr.Zero);
             clock.Start();
             timer.Start();
         }
@@ -151,7 +152,7 @@ namespace MacDock
             {
                 timer.Stop();
                 var h = target;
-                var back = new Timer { Interval = 400 };   // la animacion de Windows vuelve para cuando la restauren
+                var back = new Timer { Interval = 150 };   // la animacion de Windows vuelve para cuando la restauren
                 back.Tick += (o, ev) =>
                 {
                     back.Stop(); back.Dispose();
