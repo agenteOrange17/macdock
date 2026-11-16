@@ -15,6 +15,7 @@ namespace MacDock
     {
         [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h, int attr, out N.RECT r, int size);
         [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr h, int attr, ref int v, int size);
+        [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr h, int cmd);
 
         // la ultima vez que MacDock agrando una ventana (para no confundirlo con un doble clic en la barra)
         public static IntPtr LastZoomHwnd; public static int LastZoomTick;
@@ -81,90 +82,90 @@ namespace MacDock
     }
 
     // La "foto" de la ventana que se encoge y cae hacia el dock mientras la ventana real ya se minimizo.
+    // Va por tiempo (no por cuadros): dura lo mismo aunque la PC este ocupada, y cada cuadro es ligero
+    // (una foto chica que se estira; la transparencia la hace Windows).
     class MinimizeFx : Form
     {
         readonly IntPtr target; readonly Rectangle from; Rectangle to;
-        Bitmap shot; readonly Timer timer = new Timer { Interval = 15 };
-        int frame; const int Frames = 18;
+        Bitmap shot; readonly Timer timer = new Timer { Interval = 10 };
+        readonly System.Diagnostics.Stopwatch clock = new System.Diagnostics.Stopwatch();
+        const double DurationMs = 300;
 
         public MinimizeFx(IntPtr h, N.RECT fr)
         {
             target = h;
             from = Rectangle.FromLTRB(fr.left, fr.top, fr.right, fr.bottom);
             FormBorderStyle = FormBorderStyle.None; ShowInTaskbar = false; StartPosition = FormStartPosition.Manual;
-            Bounds = new Rectangle(-200, -200, 1, 1);
+            DoubleBuffered = true; BackColor = Color.Black;
+            Bounds = from;
+            Opacity = 0.99;   // la hace "transparente por capas" desde el inicio (cambiar la opacidad despues es instantaneo)
             var scr = Screen.FromRectangle(from).Bounds;
             int tw = Math.Max(40, from.Width / 12), th = Math.Max(30, from.Height / 12);
             to = new Rectangle(scr.Left + scr.Width / 2 - tw / 2, scr.Bottom - th - 10, tw, th);   // hacia el dock (abajo al centro)
             timer.Tick += (o, e) => Step();
         }
 
-        protected override CreateParams CreateParams { get { var cp = base.CreateParams; cp.ExStyle |= 0x80000 | 0x80 | 0x8 | 0x20 | 0x8000000; return cp; } }
+        protected override CreateParams CreateParams { get { var cp = base.CreateParams; cp.ExStyle |= 0x80 | 0x8 | 0x20 | 0x8000000; return cp; } }   // sin taskbar, encima, el mouse pasa, no roba el foco
         protected override bool ShowWithoutActivation { get { return true; } }
 
         public void Start()
         {
             if (from.Width < 50 || from.Height < 50) { N.PostMessage(target, 0x0112, new IntPtr(0xF020), IntPtr.Zero); Dispose(); return; }
-            // foto de la ventana tal como se ve (achicada si es muy grande, para que sea ligera)
-            float k = Math.Min(1f, 900f / Math.Max(from.Width, from.Height));
-            using (var full = new Bitmap(from.Width, from.Height, PixelFormat.Format32bppArgb))
+            // foto de la ventana tal como se ve, reducida (ligera para estirarla en cada cuadro)
+            float k = Math.Min(1f, 640f / Math.Max(from.Width, from.Height));
+            using (var full = new Bitmap(from.Width, from.Height))
             {
                 using (var g = Graphics.FromImage(full)) g.CopyFromScreen(from.Location, Point.Empty, from.Size);
-                shot = new Bitmap(Math.Max(1, (int)(from.Width * k)), Math.Max(1, (int)(from.Height * k)), PixelFormat.Format32bppArgb);
+                shot = new Bitmap(Math.Max(1, (int)(from.Width * k)), Math.Max(1, (int)(from.Height * k)));
                 using (var g = Graphics.FromImage(shot)) { g.InterpolationMode = InterpolationMode.HighQualityBilinear; g.DrawImage(full, 0, 0, shot.Width, shot.Height); }
             }
             Show();
-            Render(0f);
+            Refresh();   // la foto ya esta encima antes de que la ventana real se vaya
             WindowEffects.WindowsAnimation(target, false);
-            N.PostMessage(target, 0x0112, new IntPtr(0xF020), IntPtr.Zero);
+            N.PostMessage(target, 0x0112, new IntPtr(0xF020), IntPtr.Zero);   // la ventana real se minimiza ya
+            clock.Start();
             timer.Start();
+        }
+
+        protected override void OnPaintBackground(PaintEventArgs e) { }
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            if (shot == null) return;
+            e.Graphics.InterpolationMode = InterpolationMode.Bilinear;
+            e.Graphics.PixelOffsetMode = PixelOffsetMode.HighSpeed;
+            e.Graphics.DrawImage(shot, ClientRectangle);
         }
 
         void Step()
         {
-            frame++;
-            float t = Math.Min(1f, frame / (float)Frames);
-            Render(t);
-            if (t >= 1f)
+            double t = Math.Min(1.0, clock.Elapsed.TotalMilliseconds / DurationMs);
+            float e = (float)(t * t);                                   // empieza lento y acelera (cae)
+            float ew = (float)Math.Pow(t, 0.75), eh = (float)Math.Pow(t, 1.35);   // se angosta antes de achatarse
+            float cxF = from.Left + from.Width / 2f, cxT = to.Left + to.Width / 2f;
+            float w = from.Width + (to.Width - from.Width) * ew, hgt = from.Height + (to.Height - from.Height) * eh;
+            float cx = cxF + (cxT - cxF) * e, bottom = from.Bottom + (to.Bottom - from.Bottom) * e;
+            var r = Rectangle.Round(new RectangleF(cx - w / 2, bottom - hgt, Math.Max(2, w), Math.Max(2, hgt)));
+            Bounds = r;
+            Opacity = t < 0.65 ? 0.99 : Math.Max(0.0, 0.99 * (1 - (t - 0.65) / 0.35));
+            if (t >= 1.0)
             {
                 timer.Stop();
                 var h = target;
                 var back = new Timer { Interval = 400 };   // la animacion de Windows vuelve para cuando la restauren
-                back.Tick += (o, e) => { back.Stop(); back.Dispose(); WindowEffects.WindowsAnimation(h, true); };
+                back.Tick += (o, ev) =>
+                {
+                    back.Stop(); back.Dispose();
+                    if (!N.IsIconic(h)) WindowEffects.ShowWindowAsync(h, 6);   // por si la app ignoro el aviso: minimizar de otra forma
+                    WindowEffects.WindowsAnimation(h, true);
+                };
                 back.Start();
                 Close();
             }
         }
 
-        // t de 0 a 1: se encoge, se angosta mas rapido de lo ancho que de lo alto (efecto de "caer") y se desvanece al final
-        void Render(float t)
-        {
-            float e = t * t;                                   // empieza lento y acelera
-            float ew = (float)Math.Pow(t, 0.75), eh = (float)Math.Pow(t, 1.35);
-            float cxF = from.Left + from.Width / 2f, cxT = to.Left + to.Width / 2f;
-            float w = from.Width + (to.Width - from.Width) * ew, hgt = from.Height + (to.Height - from.Height) * eh;
-            float cx = cxF + (cxT - cxF) * e;
-            float bottom = from.Bottom + (to.Bottom - from.Bottom) * e;
-            var r = Rectangle.Round(new RectangleF(cx - w / 2, bottom - hgt, w, hgt));
-            if (r.Width < 1 || r.Height < 1) return;
-            byte alpha = (byte)(255 * (t < 0.7f ? 1f : Math.Max(0f, 1f - (t - 0.7f) / 0.3f)));
-            using (var bmp = new Bitmap(r.Width, r.Height, PixelFormat.Format32bppArgb))
-            {
-                using (var g = Graphics.FromImage(bmp)) { g.InterpolationMode = InterpolationMode.Bilinear; g.DrawImage(shot, 0, 0, r.Width, r.Height); }
-                IntPtr screenDc = N.GetDC(IntPtr.Zero), memDc = N.CreateCompatibleDC(screenDc), hb = bmp.GetHbitmap(Color.FromArgb(0)), old = N.SelectObject(memDc, hb);
-                try
-                {
-                    var size = new N.SIZE { cx = r.Width, cy = r.Height }; var src = new N.POINT(); var dst = new N.POINT { x = r.Left, y = r.Top };
-                    var bl = new N.BLENDFUNCTION { BlendOp = 0, SourceConstantAlpha = alpha, AlphaFormat = 1 };
-                    N.UpdateLayeredWindow(Handle, screenDc, ref dst, ref size, memDc, ref src, 0, ref bl, 2);
-                }
-                finally { N.ReleaseDC(IntPtr.Zero, screenDc); N.SelectObject(memDc, old); N.DeleteObject(hb); N.DeleteDC(memDc); }
-            }
-        }
-
         protected override void Dispose(bool disposing)
         {
-            if (disposing) { timer.Dispose(); if (shot != null) shot.Dispose(); }
+            if (disposing) { timer.Dispose(); if (shot != null) { shot.Dispose(); shot = null; } }
             base.Dispose(disposing);
         }
     }
