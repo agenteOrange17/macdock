@@ -71,6 +71,15 @@ namespace MacDock
             "SearchHost.exe", "StartMenuExperienceHost.exe", "ShellExperienceHost.exe", "TextInputHost.exe", "Widgets.exe", "WidgetService.exe",
             "dasHost.exe", "SgrmBroker.exe", "MoUsoCoreWorker.exe", "TiWorker.exe", "TrustedInstaller.exe", "smartscreen.exe" };
 
+        // Partes del sistema que suelen gastar mucho: se muestran aparte con un nombre claro, para saber "de que" es la memoria.
+        static readonly Dictionary<string, string> SystemParts = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+            { "vmmem", "WSL / Docker (Linux virtual)" }, { "vmmemWSL", "WSL / Docker (Linux virtual)" }, { "VmmemWSL", "WSL / Docker (Linux virtual)" },
+            { "vmwp.exe", "Máquinas virtuales (Hyper-V)" }, { "MsMpEng.exe", "Antivirus de Windows (Defender)" }, { "NisSrv.exe", "Antivirus de Windows (Defender)" },
+            { "SearchIndexer.exe", "Búsqueda de Windows (indexador)" }, { "SearchHost.exe", "Búsqueda de Windows (indexador)" },
+            { "dwm.exe", "Ventanas y efectos de Windows" }, { "TiWorker.exe", "Actualizaciones de Windows" }, { "TrustedInstaller.exe", "Actualizaciones de Windows" },
+            { "MoUsoCoreWorker.exe", "Actualizaciones de Windows" }, { "Widgets.exe", "Widgets de Windows" }, { "WidgetService.exe", "Widgets de Windows" },
+            { "audiodg.exe", "Sonido de Windows" }, { "spoolsv.exe", "Impresoras" } };
+
         public static MemSnapshot Read()
         {
             var snap = new MemSnapshot();
@@ -118,7 +127,18 @@ namespace MacDock
                 }
 
                 string key, name, icon; bool sys = false;
-                if (SystemImages.Contains(owner.Image) || owner.Session == 0 || owner.Path == "")
+                string part;
+                string winDir = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+                if (SystemParts.TryGetValue(owner.Image, out part))
+                {
+                    key = "sys:" + part; name = part; icon = null; sys = true;   // parte del sistema con nombre propio
+                }
+                else if (owner.Session == 0 && owner.Path != "" && !SystemImages.Contains(owner.Image) && !owner.Path.StartsWith(winDir, StringComparison.OrdinalIgnoreCase))
+                {
+                    // servicio de otro programa (MySQL, antivirus, drivers, etc.): aparte, con su nombre
+                    key = "svc:" + owner.Path; name = NiceName(owner.Path, owner.Image) + " (servicio)"; icon = owner.Path; sys = true;
+                }
+                else if (SystemImages.Contains(owner.Image) || owner.Session == 0 || owner.Path == "")
                 {
                     key = "sys"; name = "Windows (sistema y servicios)"; icon = null; sys = true;
                 }
