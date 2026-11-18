@@ -1019,6 +1019,7 @@ namespace MacDock
             ApplyRefresh();
             if (cfg.MenuBar) SetMenuBar(true);
             InitMacFeatures();
+            try { foreach (var f in Directory.GetFiles(Path.GetDirectoryName(Application.ExecutablePath), "*.viejo")) try { File.Delete(f); } catch { } } catch { }   // restos de una actualizacion
             try { ClockEngine.Start(); } catch (Exception ex) { Program.Log(ex); }   // alarmas y temporizador del Reloj
             if (WidgetsOn) global::MacDock.Widgets.Start(s, light);
             slow.Start();

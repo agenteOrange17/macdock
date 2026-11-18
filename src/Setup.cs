@@ -144,8 +144,20 @@ namespace MacDock
                 try { File.Copy(from, to, true); return; }
                 catch (Exception ex)
                 {
-                    if (!(ex is UnauthorizedAccessException || ex is IOException) || i >= 20) throw;
+                    if (!(ex is UnauthorizedAccessException || ex is IOException) || i >= 40) throw;
                     if (i == 5) StopRunningDock();
+                    // Plan B: Windows deja renombrar un .exe aunque siga abierto (o el antivirus lo este revisando).
+                    // Se mueve el viejo a un lado y se copia el nuevo; el viejo se borra la proxima vez que abra MacDock.
+                    if (i == 12 || i == 30)
+                    {
+                        try
+                        {
+                            string old = to + ".viejo";
+                            try { if (File.Exists(old)) File.Delete(old); } catch { old = to + "." + DateTime.Now.Ticks + ".viejo"; }
+                            if (File.Exists(to)) File.Move(to, old);
+                        }
+                        catch { }
+                    }
                     Thread.Sleep(250);
                 }
             }
