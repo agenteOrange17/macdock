@@ -111,6 +111,7 @@ namespace MacDock
         public TimeSpan DarkFrom = new TimeSpan(18, 30, 0);
         public bool HideTaskbar = true;
         public bool Magnify = true;
+        public bool LightMode = false;   // modo ligero: apaga lo que mas trabajo le da a la compu (sin perder tus ajustes)
         string path;
 
         public Config(string p)
@@ -127,6 +128,7 @@ namespace MacDock
                 else if (k == "reservespace") ReserveSpace = v == "1";
                 else if (k == "hidetaskbar") HideTaskbar = v == "1";
                 else if (k == "magnify") Magnify = v == "1";
+                else if (k == "lightmode") LightMode = v == "1";
                 else if (k == "autohide") AutoHide = v == "1";
                 else if (k == "autorefresh") AutoRefresh = v == "1";
                 else if (k == "appnap") AppNap = v == "1";
@@ -167,6 +169,7 @@ namespace MacDock
                     "IconSize=" + IconSize + "\r\n" +
                     "Magnification=" + Magnification.ToString(System.Globalization.CultureInfo.InvariantCulture) + "\r\n" +
                     "Magnify=" + (Magnify ? 1 : 0) + "\r\n" +
+                    "LightMode=" + (LightMode ? 1 : 0) + "\r\n" +
                     "AutoHide=" + (AutoHide ? 1 : 0) + "\r\n" +
                     "AutoRefresh=" + (AutoRefresh ? 1 : 0) + "\r\n" +
                     "AppNap=" + (AppNap ? 1 : 0) + "\r\n" +
@@ -348,7 +351,7 @@ namespace MacDock
             inputTimer.Tick += InputTick;
             inputTimer.Start();
             AllowDrop = true;
-            SetMacButtons(cfg.MacButtons);
+            SetMacButtons(MacButtonsOn);
             SetDesktopMenu(cfg.DesktopMenu);
             WatchDownloads();
             WatchTaskbarPins();
@@ -860,7 +863,7 @@ namespace MacDock
 
         void UpdatePreview()
         {
-            if (!cfg.WindowPreviews || dragging || menuOpen || stackPopup != null || hiddenFull)
+            if (!PreviewsOn || dragging || menuOpen || stackPopup != null || hiddenFull)
             {
                 ClosePreview();
                 return;
@@ -873,7 +876,7 @@ namespace MacDock
                 {
                     ClosePreview();
                     previewItem = hov;
-                    var anchor = new Point(winX + (int)(hov.X + hov.W / 2), winY + (int)(SlidePx + BarTop - (cfg.Magnify ? Ic * (MaxMag - 1f) : 0) - 28 * s));
+                    var anchor = new Point(winX + (int)(hov.X + hov.W / 2), winY + (int)(SlidePx + BarTop - (MagnifyOn ? Ic * (MaxMag - 1f) : 0) - 28 * s));
                     previewPopup = new DockPreview(s, light, hov, anchor, curScreen.Bounds, Focus, () => { RefreshRunning(); Render(); });
                     previewPopup.Show();
                 }
@@ -978,7 +981,23 @@ namespace MacDock
         float PadY { get { return 5 * s; } }
         float BarH { get { return Ic + PadY * 2 + 3 * s; } }
         float BottomM { get { return 5 * s; } }
-        float MaxMag { get { return cfg.Magnify ? cfg.Magnification : 1f; } }
+        float MaxMag { get { return MagnifyOn ? cfg.Magnification : 1f; } }
+
+        // ---------- modo ligero ----------
+        // No borra tus ajustes: solo los "pausa". Al apagarlo, todo regresa como lo tenias.
+        bool MagnifyOn { get { return cfg.Magnify && !cfg.LightMode; } }
+        bool PreviewsOn { get { return cfg.WindowPreviews && !cfg.LightMode; } }
+        bool MacButtonsOn { get { return cfg.MacButtons && !cfg.LightMode; } }
+        bool WidgetsOn { get { return cfg.Widgets && !cfg.LightMode; } }
+
+        void SetLightMode(bool on)
+        {
+            cfg.LightMode = on; cfg.Save();
+            SetMacButtons(MacButtonsOn);
+            if (WidgetsOn) global::MacDock.Widgets.Start(s, light); else global::MacDock.Widgets.Stop();
+            if (!PreviewsOn) ClosePreview();
+            Relayout();
+        }
         float BarTop { get { return H - BottomM - BarH; } }
         float Slot(DockItem it) { return it.Kind == Kind.Separator ? SepW : Ic + Gap; }
 
@@ -1001,7 +1020,7 @@ namespace MacDock
             if (cfg.MenuBar) SetMenuBar(true);
             InitMacFeatures();
             try { ClockEngine.Start(); } catch (Exception ex) { Program.Log(ex); }   // alarmas y temporizador del Reloj
-            if (cfg.Widgets) global::MacDock.Widgets.Start(s, light);
+            if (WidgetsOn) global::MacDock.Widgets.Start(s, light);
             slow.Start();
             edge.Start();
             idleSince = DateTime.Now;
@@ -1387,7 +1406,7 @@ namespace MacDock
 
         float Bounce(DockItem it)
         {
-            if (it.LaunchAt == DateTime.MinValue) return 0;
+            if (it.LaunchAt == DateTime.MinValue || cfg.LightMode) return 0;
             double t = (DateTime.Now - it.LaunchAt).TotalSeconds;
             if (t > 3 || (it.Kind == Kind.Downloads && t > 0.6)) return 0;
             return (float)(Ic * 0.42 * Math.Abs(Math.Sin(t * Math.PI / 0.6)));
@@ -1802,6 +1821,13 @@ namespace MacDock
             addOpt("Modo Gaming / Render 0% CPU (pantalla completa y sin bordes)", cfg.GamingMode, () => { cfg.GamingMode = !cfg.GamingMode; cfg.Save(); });
             opts.DropDownItems.Add(new ToolStripSeparator());
 
+            {
+                var lm = new ToolStripMenuItem("Modo ligero (para compus lentas)") { Checked = cfg.LightMode,
+                    ToolTipText = "Apaga el efecto lupa, los saltos de los iconos, las vistas previas, los widgets y los botones de Mac.\nTus ajustes no se pierden: al apagarlo todo regresa." };
+                lm.Click += (o, e) => SetLightMode(!cfg.LightMode);
+                opts.DropDownItems.Add(lm);
+                opts.DropDownItems.Add(new ToolStripSeparator());
+            }
             addOpt("Efecto lupa", cfg.Magnify, () => { cfg.Magnify = !cfg.Magnify; cfg.Save(); Relayout(); });
             addOpt("Vista previa de ventanas al pasar el mouse", cfg.WindowPreviews, () => { cfg.WindowPreviews = !cfg.WindowPreviews; cfg.Save(); if (!cfg.WindowPreviews) ClosePreview(); });
             addOpt("Soporte multi-monitor (dock y barra superior)", cfg.MultiMonitor, () =>
@@ -1831,11 +1857,11 @@ namespace MacDock
                 });
             }
             addOpt("Menu de Mac al hacer clic derecho en el escritorio", cfg.DesktopMenu, () => { cfg.DesktopMenu = !cfg.DesktopMenu; cfg.Save(); SetDesktopMenu(cfg.DesktopMenu); });
-            addOpt("Botones de Mac en las ventanas", cfg.MacButtons, () => { cfg.MacButtons = !cfg.MacButtons; cfg.Save(); SetMacButtons(cfg.MacButtons); });
+            addOpt("Botones de Mac en las ventanas", cfg.MacButtons, () => { cfg.MacButtons = !cfg.MacButtons; cfg.Save(); SetMacButtons(MacButtonsOn); });
             {
                 // elegir en que apps salen (Chrome, Brave, VS Code, Steam...) y el borde de Mac
                 var mi = new ToolStripMenuItem("Elegir apps con botones de Mac…");
-                mi.Click += (o, e) => MacButtonsWindow.Open(() => cfg.MacButtons, on => { cfg.MacButtons = on; cfg.Save(); SetMacButtons(on); });
+                mi.Click += (o, e) => MacButtonsWindow.Open(() => cfg.MacButtons, on => { cfg.MacButtons = on; cfg.Save(); SetMacButtons(MacButtonsOn); });
                 opts.DropDownItems.Add(mi);
             }
             addOpt("Abrir Finder en vez del Explorador", cfg.UseFinder, () => { cfg.UseFinder = !cfg.UseFinder; cfg.Save(); });
@@ -1862,7 +1888,7 @@ namespace MacDock
                 all0.Click += (o, e) =>
                 {
                     cfg.Widgets = !cfg.Widgets; cfg.Save();
-                    if (cfg.Widgets) global::MacDock.Widgets.Start(s, light); else global::MacDock.Widgets.Stop();
+                    if (WidgetsOn) global::MacDock.Widgets.Start(s, light); else global::MacDock.Widgets.Stop();
                 };
                 wmenu.DropDownItems.Add(all0);
                 wmenu.DropDownItems.Add(new ToolStripSeparator());
