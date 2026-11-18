@@ -73,7 +73,7 @@ namespace MacDock
 
         // Partes del sistema que suelen gastar mucho: se muestran aparte con un nombre claro, para saber "de que" es la memoria.
         static readonly Dictionary<string, string> SystemParts = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
-            { "vmmem", "WSL / Docker (Linux virtual)" }, { "vmmemWSL", "WSL / Docker (Linux virtual)" }, { "VmmemWSL", "WSL / Docker (Linux virtual)" },
+            { "vmmem", "WSL / Docker (Linux virtual)" }, { "vmmemWSL", "WSL / Docker (Linux virtual)" },
             { "vmwp.exe", "Máquinas virtuales (Hyper-V)" }, { "MsMpEng.exe", "Antivirus de Windows (Defender)" }, { "NisSrv.exe", "Antivirus de Windows (Defender)" },
             { "SearchIndexer.exe", "Búsqueda de Windows (indexador)" }, { "SearchHost.exe", "Búsqueda de Windows (indexador)" },
             { "dwm.exe", "Ventanas y efectos de Windows" }, { "TiWorker.exe", "Actualizaciones de Windows" }, { "TrustedInstaller.exe", "Actualizaciones de Windows" },
@@ -331,9 +331,10 @@ namespace MacDock
                 foreach (var a in snap.Apps.Take(60))
                     if (a.IconPath != null && !icons.ContainsKey(a.IconPath)) icons[a.IconPath] = Shell.GetIcon(a.IconPath, (int)(22 * s));
             }
-            catch (Exception ex) { Program.Log(ex); }
+            catch (Exception ex) { Program.Log(ex); readError = ex.Message; }
             Invalidate();
         }
+        string readError = "";
 
         // ---------- colores ----------
         Color Fg { get { return light ? Color.FromArgb(28, 28, 30) : Color.FromArgb(240, 240, 245); } }
@@ -370,7 +371,7 @@ namespace MacDock
                 search.SetBounds((int)(sr.X + 26 * s), (int)(sr.Y + 6 * s), (int)(sr.Width - 34 * s), (int)(18 * s));
                 if (search.Text == "" && !search.Focused) Txt(g, "Buscar app", f, Dim, sr.X + 26 * s, sr.Y + 5 * s);
 
-                if (snap == null) { Txt(g, "Leyendo memoria...", f, Dim, pad, 80 * s); return; }
+                if (snap == null) { Txt(g, readError == "" ? "Leyendo memoria..." : "No se pudo leer la memoria: " + readError, f, Dim, pad, 80 * s); return; }
 
                 // ---------- tarjeta de resumen (se acomoda al ancho de la ventana) ----------
                 long used = snap.Total - snap.Available;
